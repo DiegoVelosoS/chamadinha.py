@@ -5,13 +5,9 @@ import cv2
 import numpy as np
 from matplotlib import pyplot as plt
 from gerar_tabela_rostos import gerar_tabela_rostos
+from gerar_planilha_presenca import exibir_planilha_em_janela
 from visualizacao_modelo import visualizar_analise_modelo
 from db import garantir_estrutura_rostos
-
-try:
-    from validar_identificacao_duplicada import main as validar_identificacao_duplicada
-except Exception:
-    validar_identificacao_duplicada = None
 
 DB_NAME = 'rostos.db'
 
@@ -211,18 +207,91 @@ def exibir_tabela_consolidada_por_nome():
         print('Nenhum rosto cadastrado para consolidar.')
         return
 
+    pasta_planilhas = os.path.join(os.path.dirname(__file__), 'planilhas')
+    os.makedirs(pasta_planilhas, exist_ok=True)
+
+    caminho_csv = os.path.join(pasta_planilhas, 'tabela_consolidada_por_nome.csv')
+    tabela.to_csv(caminho_csv, index=False, encoding='utf-8-sig')
+    print(f'Planilha CSV consolidada salva em: {caminho_csv}')
+
+    caminho_xlsx = os.path.join(pasta_planilhas, 'tabela_consolidada_por_nome.xlsx')
+    try:
+        tabela.to_excel(caminho_xlsx, index=False)
+        print(f'Planilha XLSX consolidada salva em: {caminho_xlsx}')
+    except Exception as exc:
+        print(
+            'Aviso: não foi possível gerar XLSX '
+            f'({exc}). O CSV foi salvo normalmente.'
+        )
+
+    exibir_planilha_em_janela(tabela, titulo='Tabela Consolidada por Nome')
+
     print('\nTabela consolidada por nome:')
     print(tabela.to_string(index=False))
 
 
-def validar_nomes_duplicados():
-    if validar_identificacao_duplicada is None:
-        print('Não foi possível carregar validar_identificacao_duplicada.py.')
-        print('Verifique se o arquivo existe e se não há erros de importação.')
-        return
-
-    print('\nIniciando validação visual de nomes duplicados...')
-    validar_identificacao_duplicada()
+def criar_planilha():
+    """Submenu para gerar diferentes tipos de planilhas."""
+    while True:
+        print('\n--- Criar Planilha ---')
+        print('1 - Gerar planilha de presença')
+        print('2 - Gerar tabela de presença')
+        print('3 - Gerar tabela de rostos')
+        print('4 - Análise técnica do modelo')
+        print('5 - Voltar ao menu principal')
+        opcao = input('Escolha a opção: ').strip()
+        
+        if opcao == '1':
+            try:
+                import gerar_planilha_presenca
+                print('\nExecutando gerar_planilha_presenca.py...')
+                if hasattr(gerar_planilha_presenca, 'main'):
+                    gerar_planilha_presenca.main()
+                else:
+                    print('Função main() não encontrada em gerar_planilha_presenca.py')
+            except Exception as e:
+                print(f'Erro ao executar gerar_planilha_presenca.py: {e}')
+        
+        elif opcao == '2':
+            try:
+                import gerar_tabela_presença
+                print('\nExecutando gerar_tabela_presença.py...')
+                if hasattr(gerar_tabela_presença, 'main'):
+                    gerar_tabela_presença.main()
+                else:
+                    print('Função main() não encontrada em gerar_tabela_presença.py')
+            except Exception as e:
+                print(f'Erro ao executar gerar_tabela_presença.py: {e}')
+        
+        elif opcao == '3':
+            try:
+                print('\nExecutando gerar_tabela_rostos.py...')
+                tabela = gerar_tabela_rostos()
+                if not tabela.empty:
+                    print('\nTabela de rostos gerada:')
+                    print(tabela.to_string(index=False))
+                else:
+                    print('Nenhum rosto encontrado.')
+            except Exception as e:
+                print(f'Erro ao executar gerar_tabela_rostos.py: {e}')
+        
+        elif opcao == '4':
+            try:
+                import analise_tecnica_modelo
+                print('\nExecutando analise_tecnica_modelo.py...')
+                if hasattr(analise_tecnica_modelo, 'main'):
+                    analise_tecnica_modelo.main()
+                else:
+                    print('Função main() não encontrada em analise_tecnica_modelo.py')
+            except Exception as e:
+                print(f'Erro ao executar analise_tecnica_modelo.py: {e}')
+        
+        elif opcao == '5':
+            print('Voltando ao menu principal.')
+            break
+        
+        else:
+            print('Opção inválida.')
 
 
 def visualizar_imagem_cadastrada():
@@ -274,7 +343,7 @@ def main():
         print('4 - Dar nome ao rosto')
         print('5 - Exibir tabela dos rostos')
         print('6 - Exibir tabela consolidada por nome')
-        print('7 - Validar nomes duplicados (comparação visual)')
+        print('7 - Criar planilha')
         print('8 - Visualizar imagem cadastrada (análise do modelo)')
         print('9 - Concluir')
         opcao = input('Escolha a opção: ')
@@ -291,7 +360,7 @@ def main():
         elif opcao == '6':
             exibir_tabela_consolidada_por_nome()
         elif opcao == '7':
-            validar_nomes_duplicados()
+            criar_planilha()
         elif opcao == '8':
             visualizar_imagem_cadastrada()
         elif opcao == '9':
