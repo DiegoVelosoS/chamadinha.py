@@ -6,6 +6,7 @@ import sqlite3
 from datetime import datetime
 from modelos import detectar_rostos_opencv
 from db import garantir_estrutura_rostos
+import matplotlib.pyplot as plt
 
 try:
     import face_recognition
@@ -26,6 +27,54 @@ def _blob_para_imagem(rosto_blob):
         return None
     arr = np.frombuffer(rosto_blob, dtype=np.uint8)
     return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+
+def exibir_comparacao_reconhecimento(rosto_novo, rosto_referencia, nome_reconhecido, id_novo, distancia):
+    """Exibe lado a lado o rosto novo detectado e um rosto de referência do banco."""
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    fig.suptitle(f"Reconhecimento automático: '{nome_reconhecido}' (distância: {distancia:.3f})", fontsize=14)
+
+    if rosto_novo is not None:
+        axes[0].imshow(cv2.cvtColor(rosto_novo, cv2.COLOR_BGR2RGB))
+    axes[0].set_title(f"Rosto Detectado Agora\nid={id_novo}")
+    axes[0].axis("off")
+
+    if rosto_referencia is not None:
+        axes[1].imshow(cv2.cvtColor(rosto_referencia, cv2.COLOR_BGR2RGB))
+    axes[1].set_title(f"Rosto Cadastrado ({nome_reconhecido})\nna Base de Dados")
+    axes[1].axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
+
+def resposta_sim_nao(pergunta):
+    """Pergunta ao usuário e retorna True para sim ou False para não."""
+    while True:
+        resp = input(pergunta).strip().lower()
+        if resp in {"s", "sim", "y", "yes"}:
+            return True
+        if resp in {"n", "nao", "não", "no"}:
+            return False
+        print("Resposta inválida. Digite s/sim ou n/nao.")
+
+
+def buscar_rosto_referencia(cursor, nome_reconhecido):
+    """Busca o rosto mais antigo com o nome reconhecido para usar como referência."""
+    cursor.execute(
+        """
+        SELECT rosto_embeddings
+        FROM rostos
+        WHERE LOWER(TRIM(nome)) = LOWER(TRIM(?))
+        ORDER BY ord_id ASC
+        LIMIT 1
+        """,
+        (nome_reconhecido,),
+    )
+    resultado = cursor.fetchone()
+    if resultado:
+        return _blob_para_imagem(resultado[0])
+    return None
 
 
 def carregar_referencias_nomeadas(cursor):
@@ -118,11 +167,45 @@ def salvar_rostos(imagem_path, turma):
         print("Aviso: pacote 'face_recognition' não está instalado. O reconhecimento automático foi desativado.")
 
     reconhecidos = 0
+    reconhecidos_confirmados = 0
+    reconhecidos_rejeitados = 0
     novos = 0
     sem_embedding = 0
 
     numero_imagem = int(os.path.splitext(os.path.basename(imagem_path))[0].replace('img','').replace('.jpg',''))
     data_imagem = input('Data e hora da imagem (AAAA-MM-DD HH:MM): ')
+    
+    # Primeiro, exibe todos os rostos detectados e reconhecidos
+    print(f"\n{len(rostos)} rosto(s) detectado(s) na imagem.")
+    rostos_com_reconhecimento = []
+    
+    for idx, (x, y, w, h) in enumerate(rostos):
+        rosto = imagem[y:y+h, x:x+w]
+        embedding = calcular_embedding_rosto(rosto)
+        nome_reconhecido, distancia = reconhecer_nome_por_embedding(embedding, referencias_nomeadas)
+        
+        ord_id_str = f'{numero_imagem:03d}'
+        idx_str = f'{idx:03d}'
+        dt = datetime.strptime(data_imagem, '%Y-%m-%d %H:%M')
+        data_str = dt.strftime('%Y%m%d%H%M')
+        id_rosto = f'{ord_id_str}-{idx_str}-{data_str}'
+        
+        if embedding is None:
+            sem_embedding += 1
+        
+        if nome_reconhecido:
+            reconhecidos += 1
+            print(f"  - Rosto {idx+1}: Reconhecido como '{nome_reconhecido}' (distância: {distancia:.3f})")
+            rostos_com_reconhecimento.append((idx, rosto, nome_reconhecido, distancia, id_rosto, x, y, w, h))
+        else:
+            print(f"  - Rosto {idx+1}: Não reconhecido (novo)")
+    
+    # Mensagem informativa
+    if reconhecidos > 0:
+        print(f"\n{reconhecidos} rosto(s) reconhecido(s) automaticamente.")
+        print("Iniciando validação manual para confirmar identidades...\n")
+    
+    # Agora processa cada rosto
     for idx, (x, y, w, h) in enumerate(rostos):
         rosto = imagem[y:y+h, x:x+w]
         _, buffer = cv2.imencode('.jpg', rosto)
@@ -135,18 +218,49 @@ def salvar_rostos(imagem_path, turma):
         data_str = dt.strftime('%Y%m%d%H%M')
         id_rosto = f'{ord_id_str}-{idx_str}-{data_str}'
 
-        if embedding is None:
-            sem_embedding += 1
-
+        # Se foi reconhecido, precisa validar com o usuário
         if nome_reconhecido:
-            reconhecidos += 1
-            origem_nome = 'automatico'
-            print(f"Rosto {id_rosto} reconhecido como '{nome_reconhecido}' (distância: {distancia:.3f}).")
+            print(f"\n--- Validando Reconhecimento do Rosto {idx+1} ---")
+            print(f"ID: {id_rosto}")
+            print(f"Reconhecido como: '{nome_reconhecido}' (distância: {distancia:.3f})")
+            
+            # Busca um rosto de referência do banco
+            rosto_referencia = buscar_rosto_referencia(cursor, nome_reconhecido)
+            
+            if rosto_referencia is not None:
+                # Exibe os dois rostos para comparação
+                print("Exibindo comparação visual...")
+                exibir_comparacao_reconhecimento(rosto, rosto_referencia, nome_reconhecido, id_rosto, distancia)
+                
+                # Pergunta ao usuário
+                mesma_pessoa = resposta_sim_nao(
+                    f"Após fechar a janela, o rosto detectado é a mesma pessoa de '{nome_reconhecido}'? (s/n): "
+                )
+                
+                if mesma_pessoa:
+                    # Usuário confirmou: salva com o nome reconhecido
+                    reconhecidos_confirmados += 1
+                    origem_nome = 'automatico'
+                    print(f"✓ Reconhecimento confirmado: '{nome_reconhecido}'")
+                else:
+                    # Usuário rejeitou: salva sem nome
+                    reconhecidos_rejeitados += 1
+                    nome_reconhecido = None
+                    origem_nome = None
+                    novos += 1
+                    print(f"✗ Reconhecimento rejeitado. Rosto salvo sem nome (novo ID criado).")
+            else:
+                # Não encontrou referência (caso raro), aceita automaticamente
+                reconhecidos_confirmados += 1
+                origem_nome = 'automatico'
+                print(f"✓ Sem referência anterior. Reconhecimento aceito automaticamente.")
         else:
+            # Não foi reconhecido: salva sem nome
             novos += 1
             origem_nome = None
-            print(f"Rosto {id_rosto} salvo como novo registro sem nome.")
+            print(f"\nRosto {idx+1} (ID: {id_rosto}): Salvo como novo registro sem nome.")
 
+        # Insere no banco de dados
         cursor.execute(
             '''INSERT INTO rostos (rosto_embeddings, id_rosto, nome, numero_imagem, turma, data_imagem, origem_nome)
                VALUES (?, ?, ?, ?, ?, ?, ?)''',
@@ -163,11 +277,17 @@ def salvar_rostos(imagem_path, turma):
 
     conn.commit()
     conn.close()
-    print(f'{len(rostos)} rosto(s) processado(s) e salvo(s) no banco de dados.')
+    print(f'\n{"="*60}')
+    print(f'Processamento concluído: {len(rostos)} rosto(s) processado(s).')
+    print(f'{"="*60}')
     print(f'- Reconhecidos automaticamente: {reconhecidos}')
+    if reconhecidos > 0:
+        print(f'  • Confirmados pelo usuário: {reconhecidos_confirmados}')
+        print(f'  • Rejeitados pelo usuário: {reconhecidos_rejeitados}')
     print(f'- Novos/sem correspondência: {novos}')
     if sem_embedding > 0:
         print(f'- Sem embedding válido: {sem_embedding}')
+    print(f'{"="*60}\n')
 
 def upload_imagem():
     caminho = input('Caminho do arquivo de imagem para upload: ')
