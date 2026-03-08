@@ -1,0 +1,12 @@
+opencv-python
+numpy
+matplotlib
+pandas
+scikit-learn
+face-recognition
+setuptools<81
+
+seaborn
+
+# Nota: O detector de rostos YuNet é baixado automaticamente (não precisa instalar nada extra)
+# YuNet é o detector state-of-the-art do OpenCV (2023) - alta precisão sem dependências extras

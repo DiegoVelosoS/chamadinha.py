@@ -1,0 +1,54 @@
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE
+.vscode/
+
+# Banco de dados
+rostos.db
+*.db
+*.sqlite
+
+# Imagens
+imagens_salvas/
+
+# Notebooks
+*.ipynb
+
+# Ambiente virtual
+.venv/
+venv/
+
+# Outros
+*.log
+*.tmp
+*.bak
+
+# Diretório de imagens salvas
+imagens_salvas/
+
+# Arquivos de sistema
+.DS_Store
+Thumbs.db
+
+# Configuração do VS Code
+.vscode/
+# Ignorar dependências do Node.js (Frontend)
+frontend/node_modules/
+frontend/dist/
+
+# Ignorar banco de dados local (se for apenas para dev)
+*.db
+*.sqlite3
+backend/chamadinha.db
+
+# Ignorar uploads de imagens (Dados sensíveis e pesados)
+backend/uploads/
+
+# Ignorar arquivos de sistema
+.DS_Store
+.tmp.driveupload/
